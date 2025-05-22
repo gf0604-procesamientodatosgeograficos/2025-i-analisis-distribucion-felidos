@@ -5,8 +5,8 @@ format: html
 lang: es
 toc: true
 theme: yeti
-bibliography: referencias.bib
-csl: apa-6th-edition.csl
+bibliography: bib/referencias.bib
+csl: bib/apa-6th-edition.csl
 ---
 
 # Introducción
@@ -153,7 +153,7 @@ Cada registro de presencia corresponde a una evidencia de la presencia de un org
 
 # Cargar datos de félidos
 felidos <- st_read(
-  "felidos.csv",
+  "datos/felidos.csv",
   options = c(
     "X_POSSIBLE_NAMES=decimalLongitude",
     "Y_POSSIBLE_NAMES=decimalLatitude"
@@ -179,7 +179,7 @@ Los polígonos de las provincias de Costa Rica se obtuvieron del nodo del Instit
 # Cargar datos de provincias
 provincias <- 
   st_read(
-  "provincias-simplificadas.gpkg", 
+  "datos/provincias-simplificadas.gpkg", 
   quiet = TRUE
 )
 ```
