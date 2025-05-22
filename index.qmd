@@ -1,0 +1,316 @@
+---
+title: "Análisis de la distribución espacial de félidos en Costa Rica"
+author: "Manuel Vargas"
+format: html
+lang: es
+toc: true
+theme: yeti
+bibliography: referencias.bib
+csl: apa-6th-edition.csl
+---
+
+# Introducción
+
+Este documento presenta diversas visualizaciones y análisis de datos relativos a la distribución geoespacial de félidos en Costa Rica. Fue desarrollado con el sistema de publicación técnica y científica [Quarto](https://quarto.org/), el cual integra narrativa en el lenguaje de marcado ligero [Markdown](https://daringfireball.net/projects/markdown/) y bloques ejecutables de código fuente, en este caso del lenguaje de programación [R](https://www.r-project.org/), los cuales generan salidas como tablas, gráficos estadísticos y mapas.
+
+Se utilizaron varias bibliotecas de programación R:
+
+```{r}
+#| label: carga-bibliotecas
+#| warning: false
+#| message: false
+#| code-fold: true
+#| code-summary: "Código para cargar las bibliotecas de R"
+
+# Colección de bibliotecas para ciencia de datos
+library(tidyverse)
+
+# Biblioteca para manejo de datos geoespaciales vectoriales
+library(sf)
+
+# Biblioteca para manejo de datos geoespaciales raster
+library(terra)
+
+# Biblioteca para generación de gráficos interactivos
+library(plotly)
+
+# Biblioteca para generación de mapas interactivos
+library(tmap)
+
+# Biblioteca para generación de tablas interactivas
+library(DT)
+
+# Biblioteca para generación de tablas estáticas
+library(kableExtra)
+```
+
+
+En la [clasificación taxonómica](https://es.wikipedia.org/wiki/Taxonom%C3%ADa), los félidos son una familia con nombre científico [*Felidae*](https://es.wikipedia.org/wiki/Felidae), perteneciente al orden de los carnívoros (*Carnivora*) y a la clase de los mamíferos (*Mammalia*). Contiene, al menos, 36 especies silvestres. Entre sus similitudes morfológicas pueden mencionarse caras redondas, bigotes, ojos grandes y orejas grandes. Tienen el rango más amplio de tamaños corporales de todas las familias de carnívoros, con pesos que van desde 1 kg hasta 300 kg. Ocupan hábitats muy diversos y su distribución natural cubre todo el planeta, con la excepción de la Antártida y Australia, donde han sido introducidos por el ser humano [@lamberski_felidae_2015].
+
+En Costa Rica hay seis especies de félidos silvestres, cuyas principales características se resumen en la tabla que se muestra a continuación:
+
+```{r}
+#| label: tabla-especies-felidos
+#| code-fold: true
+#| code-summary: "Código para generar la tabla"
+
+# Tabla con información de especies de félidos de Costa Rica
+
+# Data frame con datos
+especies_felidos <-
+  data.frame(
+    imagen = "",
+    nombre_cientifico = c(
+      "Leopardus pardalis",
+      "Leopardus tigrinus",
+      "Leopardus wiedii",
+      "Panthera onca",
+      "Puma concolor",
+      "Puma yagouaroundi"
+    ),
+    url = c(
+      "https://es.wikipedia.org/wiki/Leopardus_pardalis",
+      "https://es.wikipedia.org/wiki/Leopardus_tigrinus",
+      "https://es.wikipedia.org/wiki/Leopardus_wiedii",
+      "https://es.wikipedia.org/wiki/Panthera_onca",
+      "https://es.wikipedia.org/wiki/Puma_concolor",
+      "https://es.wikipedia.org/wiki/Herpailurus_yagouaroundi"
+    ),
+    nombre_comun = c(
+      "Manigordo, ocelote",
+      "Tigrillo",
+      "Caucel",
+      "Jaguar",
+      "Puma",
+      "León breñero, yaguarundí"
+    ),
+    longitud = c("110", "78", "94", "200", "170", "125"),
+    peso = c("7 - 15 ", "1.5 - 2.8", "3 - 5", "30 - 100", "24 - 65", "4 - 9"),
+    estado_conservacion = c(
+      "En peligro de extinción",
+      "En peligro de extinción",
+      "En peligro de extinción",
+      "En peligro de extinción",
+      "En peligro de extinción",
+      "En peligro de extinción"
+    )
+  )
+
+# Se formatea la columna con el URL que navega al artículo de Wikipedia para cada especie
+especies_felidos <-
+  especies_felidos |>
+  mutate(nombre_cientifico = cell_spec(nombre_cientifico, "html", link = url)) |>
+  dplyr::select(-url)
+
+# Tabla con formato e imágenes
+especies_felidos |>
+  kbl(
+    "html",
+    caption = "Especies de félidos de Costa Rica",
+    escape = FALSE,
+    col.names = c(
+      "",
+      "Nombre científico",
+      "Nombre común",
+      "Longitud (cm)",
+      "Peso (kg)",
+      "Estado de conservación"
+    )
+  ) %>%
+  kable_paper(full_width = TRUE) |>
+  row_spec(0, align = "c") |>
+  column_spec(2, italic = TRUE) |>
+  column_spec(1, image = spec_image(
+    c(
+      "img/leopardus_pardalis.png",
+      "img/leopardus_tigrinus.png",
+      "img/leopardus_wiedii.png",
+      "img/panthera_onca.png",
+      "img/puma_concolor.png",
+      "img/puma_yagouaroundi.png"
+    ),
+    400,
+    400
+  ))
+```
+
+Las fotografías mostradas en el cuadro anterior provienen del proyecto [Costa Rica Silvestre](https://costaricasilvestre.go.cr/) [@sinac_costa_2019].
+
+# Fuentes de datos
+
+Se utilizaron dos conjuntos de datos: registros de presencia de félidos y polígonos de provincias de Costa Rica.
+
+## Registros de presencia de félidos
+
+Cada registro de presencia corresponde a una evidencia de la presencia de un organismo. Algunos ejemplos de registros de presencia son especímenes en museos de historia natural y observaciones de ciencia ciudadana. Los registros de presencia de félidos que se utilizaron en las visualizaciones y análisis de este documento fueron agrupados por el [Sistema Mundial de Información en Biodiversidad (GBIF)](https://www.gbif.org/) y obtenidos a través de una consulta a su portal de datos [@https://doi.org/10.15468/dl.qgqpe2].
+
+```{r}
+#| label: carga-datos-felidos
+#| warning: false
+#| message: false
+#| code-fold: true
+#| code-summary: "Código para cargar los registros de presencia de félidos"
+
+# Cargar datos de félidos
+felidos <- st_read(
+  "felidos.csv",
+  options = c(
+    "X_POSSIBLE_NAMES=decimalLongitude",
+    "Y_POSSIBLE_NAMES=decimalLatitude"
+  ),
+  quiet=TRUE
+)
+
+# Asignar CRS
+st_crs(felidos) <- 4326
+```
+
+## Provincias de Costa Rica
+
+Los polígonos de las provincias de Costa Rica se obtuvieron del nodo del Instituto Geográfico Nacional (IGN) en el [Sistema Nacional de Información Territorial (SNIT)](https://www.snitcr.go.cr/).
+
+```{r}
+#| label: carga-datos-provincias
+#| warning: false
+#| message: false
+#| code-fold: true
+#| code-summary: "Código para cargar los registros de presencia de félidos"
+
+# Cargar datos de provincias
+provincias <- 
+  st_read(
+  "provincias-simplificadas.gpkg", 
+  quiet = TRUE
+)
+```
+
+# Visualizaciones de datos
+
+## Detalle de registros de presencia
+
+```{r}
+#| label: tabla-detalle-registros
+#| warning: false
+#| message: false
+#| code-fold: true
+#| code-summary: "Código para generar la tabla"
+
+# Definir y mostrar tabla DT
+felidos |>
+  st_drop_geometry() |>
+  dplyr::select(
+    species, 
+    eventDate, 
+    stateProvince, 
+    locality, 
+    decimalLongitude, 
+    decimalLatitude
+  ) |>
+  datatable(
+    rownames = FALSE,
+    colnames = c(
+      "Especie",
+      "Fecha",
+      "Provincia",
+      "Localidad",
+      "Longitud",
+      "Latitud"
+    )
+  )
+```
+
+## Cantidad de registros de presencia por especie
+
+```{r}
+#| label: grafico-cantidad-registros-por-especie
+#| warning: false
+#| message: false
+#| code-fold: true
+#| code-summary: "Código para generar el gráfico"
+
+# Definir gráfico estático ggplot2
+grafico <- 
+felidos |>
+  ggplot(aes(x = fct_infreq(species))) +
+  geom_bar(
+    aes(
+      text = paste0(
+        "Cantidad de registros: ", after_stat(count)
+      )
+    )    
+  ) +
+  ggtitle("Cantidad de registros pór especie") +
+  xlab("Especie") +
+  ylab("Cantidad de registros") +
+  theme_classic()
+
+# Mostrar gráfico interactivo plotly
+ggplotly(grafico, tooltip = "text") |> config(locale = "es")
+```
+
+## Distribución geoespacial de registros de presencia
+
+```{r}
+#| label: mapa-distribucion
+#| warning: false
+#| message: false
+#| code-fold: true
+#| code-summary: "Código para generar el mapa"
+
+# Especificar el modo interactivo
+tmap_mode("view")
+
+# Definir el mapa de provincias y registros de félidos
+mapa_provincias_felidos <-
+  
+  # Especificar el centro y el nivel inicial de zoom
+  tm_view(
+    set_view = c(lon = -84.2, lat = 9.6, zoom = 7)
+  ) +
+  
+  # Provincias (polígonos)
+  tm_shape(provincias, name = "Provincias") +
+  tm_borders() +
+  
+  # Félidos (puntos)
+  tm_shape(felidos, name = "Félidos") +
+  tm_dots(
+    fill = "species",
+    fill.scale = tm_scale(values = "brewer.set1"),   # paleta Set1
+    fill.legend = tm_legend(title = "Especie"),       # título de la leyenda
+    
+    # Otras propiedades visuales
+    size = 0.5,
+    id = "species",
+    popup.vars = c(
+      "Localidad" = "locality",
+      "Fecha" = "eventDate",
+      "Fuente" = "institutionCode"
+    )
+  ) +
+  
+  # Definir la escala gráfica
+  tm_scalebar(position = c("left", "bottom"))
+
+# Mostrar el mapa
+mapa_provincias_felidos
+```
+
+# Referencias
+
+::: {#refs}
+:::
+
+
+
+
+
+
+
+
+
+
+
+
+
+
